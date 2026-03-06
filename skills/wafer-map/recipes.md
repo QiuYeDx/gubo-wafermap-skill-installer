@@ -226,7 +226,7 @@ tooltip: {
 
 ## Color By / Legend 高亮
 
-> ⛔ **Legend 高亮与圈选高亮互斥**：激活 Legend 高亮时必须禁用框选并清除框选状态。见 [高亮互斥实现模式](#高亮互斥实现模式)。
+> ⛔ **Legend 高亮状态与圈选高亮状态互斥**：Legend 变更时清空 Brush 选中 die（不关闭框选开关）；Brush 选中 die 时重置 Legend 为全选。见 [高亮互斥实现模式](#高亮互斥实现模式)。
 
 使用 `highlightLayer` 实现按 Bin 类型过滤显示（Legend 交互）。
 
@@ -294,7 +294,7 @@ waferMap.highlight({
 
 ## 框选生命周期管理
 
-> ⛔ **圈选高亮与 Legend 高亮互斥**：启用框选前必须确保 Legend 处于全选状态（无 Legend 高亮）。见 [高亮互斥实现模式](#高亮互斥实现模式)。
+> ⛔ **圈选高亮状态与 Legend 高亮状态互斥**：Brush 选中 die 时自动重置 Legend 为全选；Legend 变更时自动清空 Brush 选中 die。框选功能开关本身不受影响。见 [高亮互斥实现模式](#高亮互斥实现模式)。
 
 ### 完整框选流程（框架无关）
 
@@ -401,7 +401,7 @@ onUnmounted(() => {
 
 ## 高亮互斥实现模式
 
-> ⛔ **此为强制规则**：圈选高亮（Brush Highlight）与 Legend 高亮（Color By Highlight）不能同时存在。一种高亮的产生必须重置另一种高亮状态。
+> ⛔ **此为强制规则**：圈选高亮（Brush Highlight）与 Legend 高亮（Color By Highlight）的**高亮状态**互斥。
 
 ### 原理
 
@@ -411,10 +411,19 @@ onUnmounted(() => {
 
 同时存在时 `highlightLayer` 状态冲突，导致视觉错乱和不可预测行为。
 
+### 互斥行为（必须实现）
+
+| 触发动作 | 效果 | 不影响 |
+| --- | --- | --- |
+| Legend 状态变更（勾选/取消 Bin） | `clearBrushedShapes()` 清空 Brush 选中 die | 框选功能开关（`changeBrushEnabled` 保持不变） |
+| Brush 实际选中 die（`onBrushChange` 收到有效 shapes） | 重置 Legend 为全选（`highlightLayer: undefined`） | 框选功能开关 |
+| 启用/禁用框选开关 | 无 | Legend 状态 |
+
 ### React 实现
 
 ```tsx
 const [brushEnabled, setBrushEnabled] = useState(false);
+const [brushedCount, setBrushedCount] = useState(0);
 const [activeBins, setActiveBins] = useState<Record<string, boolean>>(
   () => Object.fromEntries(BIN_DEFS.map((b) => [b.key, true])),
 );
@@ -423,29 +432,45 @@ const allBinsActive = useMemo(
   [activeBins],
 );
 
-// Legend 切换：激活 Legend 高亮时 → 禁用框选并清除
+// 区分"程序清空 brush"和"用户框选动作"的标记
+const isProgrammaticClearRef = useRef(false);
+
+// ── 实例创建 effect ──
+useEffect(() => {
+  const wm = new WaferMap(containerRef.current!, { zoomEnabled: true });
+  instanceRef.current = wm;
+
+  // ⛔ 互斥核心：Brush 选中 die 时重置 Legend
+  const unsubBrush = wm.onBrushChange((shapes?: any[] | null) => {
+    setBrushedCount(shapes?.length ?? 0);
+    if (isProgrammaticClearRef.current) {
+      isProgrammaticClearRef.current = false;
+      return; // 这是 Legend 触发的程序清空，不重置 Legend
+    }
+    if (shapes && shapes.length > 0) {
+      setActiveBins(Object.fromEntries(BIN_DEFS.map((b) => [b.key, true])));
+    }
+  });
+
+  return () => { unsubBrush(); wm.destroy(); };
+}, []);
+
+// ⛔ 互斥核心：Legend 变更时清空 Brush 选中 die（不影响框选开关）
 const toggleBin = (key: string) => {
-  if (brushEnabled) {
-    setBrushEnabled(false);
-    instanceRef.current?.changeBrushEnabled(false);
-    instanceRef.current?.clearBrushedShapes();
-  }
+  isProgrammaticClearRef.current = true;
+  instanceRef.current?.clearBrushedShapes();
+  setBrushedCount(0);
   setActiveBins((prev) => ({ ...prev, [key]: !prev[key] }));
 };
 
-// 框选切换：启用框选时 → 重置 Legend 为全选
-const handleBrushToggle = (enabled: boolean) => {
-  if (enabled && !allBinsActive) {
-    setActiveBins(Object.fromEntries(BIN_DEFS.map((b) => [b.key, true])));
-  }
-  setBrushEnabled(enabled);
-};
+// 框选开关：独立控制，不影响 Legend
+// 直接使用 setBrushEnabled，无需额外逻辑
 
 // options 中根据 allBinsActive 条件设置 highlightLayer
 const options = useMemo((): WaferMapOptions => ({
   // ...其他配置
   highlightLayer: allBinsActive
-    ? undefined  // 全选时关闭高亮层，框选可自由使用
+    ? undefined  // 全选时关闭高亮层，Brush 选中高亮可正常生效
     : {
         show: true,
         maskBgColor: 'rgba(255,255,255,0.725)',
@@ -469,23 +494,41 @@ const allBinsActive = computed(
   () => Object.values(activeBins.value).every(Boolean),
 );
 
-// Legend 切换：激活 Legend 高亮时 → 禁用框选并清除
+let isProgrammaticClear = false;
+
+// ── 实例创建 ──
+onMounted(() => {
+  instance = new WaferMap(containerRef.value!, { zoomEnabled: true });
+
+  // ⛔ 互斥核心：Brush 选中 die 时重置 Legend
+  unsubBrush = instance.onBrushChange((shapes?: any[] | null) => {
+    brushedCount.value = shapes?.length ?? 0;
+    if (isProgrammaticClear) {
+      isProgrammaticClear = false;
+      return;
+    }
+    if (shapes && shapes.length > 0) {
+      activeBins.value = Object.fromEntries(BIN_DEFS.map((b) => [b.key, true]));
+    }
+  });
+});
+
+// ⛔ 互斥核心：Legend 变更时清空 Brush 选中 die（不影响框选开关）
 function toggleBin(key: string) {
-  if (brushEnabled.value) {
-    brushEnabled.value = false;
-    instance?.changeBrushEnabled(false);
-    instance?.clearBrushedShapes();
-  }
+  isProgrammaticClear = true;
+  instance?.clearBrushedShapes();
+  brushedCount.value = 0;
   activeBins.value = { ...activeBins.value, [key]: !activeBins.value[key] };
 }
 
-// 框选切换：启用框选时 → 重置 Legend 为全选
-function handleBrushToggle(enabled: boolean) {
-  if (enabled && !allBinsActive.value) {
-    activeBins.value = Object.fromEntries(BIN_DEFS.map((b) => [b.key, true]));
+// 框选开关：独立控制，不影响 Legend
+watch(() => brushEnabled.value, (enabled) => {
+  instance?.changeBrushEnabled(enabled);
+  if (!enabled) {
+    instance?.clearBrushedShapes();
+    brushedCount.value = 0;
   }
-  brushEnabled.value = enabled;
-}
+});
 
 // options 中根据 allBinsActive 条件设置 highlightLayer
 const options = computed((): WaferMapOptions => ({
@@ -508,10 +551,12 @@ const options = computed((): WaferMapOptions => ({
 
 在编写涉及 WaferMap 高亮的代码时，确认以下事项：
 
-- [ ] Legend 切换处理函数中：是否在变更 `activeBins` 前检查并禁用框选？
-- [ ] 框选启用处理函数中：是否在启用框选前检查并重置 Legend 为全选？
+- [ ] Legend 切换处理中：是否调用了 `clearBrushedShapes()` 清空 Brush 选中 die？
+- [ ] Legend 切换处理中：是否**没有**调用 `changeBrushEnabled(false)`？（框选开关应保持不变）
+- [ ] `onBrushChange` 回调中：收到有效 shapes 时是否重置了 Legend 为全选？
+- [ ] `onBrushChange` 回调中：是否区分了"用户框选"和"程序 `clearBrushedShapes()` 触发"？（用 ref 标记）
 - [ ] `highlightLayer` 配置：当 `allBinsActive` 时是否设为 `undefined`（而非 `{ show: false }`）？
-- [ ] 禁用框选时：是否同时调用了 `changeBrushEnabled(false)` 和 `clearBrushedShapes()`？
+- [ ] 框选开关（`changeBrushEnabled`）：是否独立于 Legend 状态控制？
 
 ---
 

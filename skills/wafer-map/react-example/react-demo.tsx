@@ -213,6 +213,7 @@ const TOOLTIP_FIELD_LABELS: Record<TooltipFieldKey, string> = {
 const WaferMapDemo: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const instanceRef = useRef<WaferMap | null>(null);
+  const isProgrammaticClearRef = useRef(false);
 
   // ── 控制状态 ──
 
@@ -270,6 +271,14 @@ const WaferMapDemo: React.FC = () => {
 
     const unsubBrush = wm.onBrushChange((shapes?: any[] | null) => {
       setBrushedCount(shapes?.length ?? 0);
+      if (isProgrammaticClearRef.current) {
+        isProgrammaticClearRef.current = false;
+        return;
+      }
+      // ⛔ 高亮互斥：Brush 实际选中 die → 重置 Legend 为全选
+      if (shapes && shapes.length > 0) {
+        setActiveBins(Object.fromEntries(BIN_DEFS.map((b) => [b.key, true])));
+      }
     });
 
     return () => {
@@ -399,25 +408,13 @@ const WaferMapDemo: React.FC = () => {
     }
   }, [brushEnabled]);
 
-  // ── Legend 操作（⛔ 高亮互斥：Legend 高亮激活时必须禁用框选） ──
+  // ── Legend 操作（⛔ 高亮互斥：Legend 变更时清空 Brush 选中 die，不影响框选开关） ──
 
   const toggleBin = (key: string) => {
-    if (brushEnabled) {
-      setBrushEnabled(false);
-      instanceRef.current?.changeBrushEnabled(false);
-      instanceRef.current?.clearBrushedShapes();
-      setBrushedCount(0);
-    }
+    isProgrammaticClearRef.current = true;
+    instanceRef.current?.clearBrushedShapes();
+    setBrushedCount(0);
     setActiveBins((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  // ── 框选切换（⛔ 高亮互斥：启用框选时必须重置 Legend 为全选） ──
-
-  const handleBrushToggle = (enabled: boolean) => {
-    if (enabled && !allBinsActive) {
-      setActiveBins(Object.fromEntries(BIN_DEFS.map((b) => [b.key, true])));
-    }
-    setBrushEnabled(enabled);
   };
 
   const noneBinsActive = useMemo(
@@ -558,7 +555,7 @@ const WaferMapDemo: React.FC = () => {
 
               {/* ── 圈选 ── */}
               <Section title="圈选（Brush）">
-                <Toggle label="启用圈选" checked={brushEnabled} onChange={handleBrushToggle} />
+                <Toggle label="启用圈选" checked={brushEnabled} onChange={setBrushEnabled} />
                 <Toggle
                   label="Alt 增/减选"
                   checked={supportAltSelect}
@@ -595,12 +592,9 @@ const WaferMapDemo: React.FC = () => {
                     variant="outline"
                     className="text-xs h-6 px-2 cursor-pointer"
                     onClick={() => {
-                      if (brushEnabled) {
-                        setBrushEnabled(false);
-                        instanceRef.current?.changeBrushEnabled(false);
-                        instanceRef.current?.clearBrushedShapes();
-                        setBrushedCount(0);
-                      }
+                      isProgrammaticClearRef.current = true;
+                      instanceRef.current?.clearBrushedShapes();
+                      setBrushedCount(0);
                       setActiveBins(Object.fromEntries(BIN_DEFS.map((b) => [b.key, false])));
                     }}
                     disabled={noneBinsActive}

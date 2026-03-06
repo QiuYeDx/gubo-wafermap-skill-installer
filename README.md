@@ -63,7 +63,8 @@ gubo-wafermap-skill-installer/
 └── skills/
     └── wafer-map/
         ├── SKILL.md           # Skill 主文件
-        └── reference.md       # TypeScript 类型参考
+        ├── reference.md       # TypeScript 类型参考
+        └── ...
 ```
 
 ---
