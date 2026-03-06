@@ -1,0 +1,36 @@
+{
+  "name": "gubo-wafermap-skill-installer",
+  "version": "1.0.0",
+  "description": "@guwave/wafermap-v2 晶圆图 AI Skill 一键安装器",
+  "type": "module",
+  "bin": {
+    "gubo-wafermap-skill-installer": "./bin/cli.mjs"
+  },
+  "files": [
+    "bin",
+    "src"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "wafer-map",
+    "wafermap",
+    "guwave",
+    "skill",
+    "installer",
+    "cli",
+    "cursor",
+    "claude",
+    "codex",
+    "gemini",
+    "semiconductor"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@inquirer/prompts": "^7.0.0",
+    "chalk": "^5.4.0",
+    "ora": "^8.1.0",
+    "adm-zip": "^0.5.16"
+  }
+}
