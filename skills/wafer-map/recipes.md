@@ -8,9 +8,10 @@
 2. [自定义 Tooltip 渲染](#自定义-tooltip-渲染)
 3. [Color By / Legend 高亮](#color-by--legend-高亮)
 4. [框选生命周期管理](#框选生命周期管理)
-5. [框架集成生产级模板](#框架集成生产级模板)
-6. [动态更新最佳实践](#动态更新最佳实践)
-7. [TypeScript 常见类型问题](#typescript-常见类型问题)
+5. [⛔ 高亮互斥实现模式](#高亮互斥实现模式)
+6. [框架集成生产级模板](#框架集成生产级模板)
+7. [动态更新最佳实践](#动态更新最佳实践)
+8. [TypeScript 常见类型问题](#typescript-常见类型问题)
 
 ---
 
@@ -225,6 +226,8 @@ tooltip: {
 
 ## Color By / Legend 高亮
 
+> ⛔ **Legend 高亮与圈选高亮互斥**：激活 Legend 高亮时必须禁用框选并清除框选状态。见 [高亮互斥实现模式](#高亮互斥实现模式)。
+
 使用 `highlightLayer` 实现按 Bin 类型过滤显示（Legend 交互）。
 
 ### 核心原理
@@ -290,6 +293,8 @@ waferMap.highlight({
 ---
 
 ## 框选生命周期管理
+
+> ⛔ **圈选高亮与 Legend 高亮互斥**：启用框选前必须确保 Legend 处于全选状态（无 Legend 高亮）。见 [高亮互斥实现模式](#高亮互斥实现模式)。
 
 ### 完整框选流程（框架无关）
 
@@ -391,6 +396,122 @@ onUnmounted(() => {
 });
 </script>
 ```
+
+---
+
+## 高亮互斥实现模式
+
+> ⛔ **此为强制规则**：圈选高亮（Brush Highlight）与 Legend 高亮（Color By Highlight）不能同时存在。一种高亮的产生必须重置另一种高亮状态。
+
+### 原理
+
+两种高亮机制都作用于 `highlightLayer`：
+- **圈选高亮**：`brush.needBrushHighlight: true` + `changeBrushEnabled(true)` → 框选后自动高亮选中 die
+- **Legend 高亮**：`highlightLayer.isHighlight` → 按条件决定哪些 die 高亮
+
+同时存在时 `highlightLayer` 状态冲突，导致视觉错乱和不可预测行为。
+
+### React 实现
+
+```tsx
+const [brushEnabled, setBrushEnabled] = useState(false);
+const [activeBins, setActiveBins] = useState<Record<string, boolean>>(
+  () => Object.fromEntries(BIN_DEFS.map((b) => [b.key, true])),
+);
+const allBinsActive = useMemo(
+  () => Object.values(activeBins).every(Boolean),
+  [activeBins],
+);
+
+// Legend 切换：激活 Legend 高亮时 → 禁用框选并清除
+const toggleBin = (key: string) => {
+  if (brushEnabled) {
+    setBrushEnabled(false);
+    instanceRef.current?.changeBrushEnabled(false);
+    instanceRef.current?.clearBrushedShapes();
+  }
+  setActiveBins((prev) => ({ ...prev, [key]: !prev[key] }));
+};
+
+// 框选切换：启用框选时 → 重置 Legend 为全选
+const handleBrushToggle = (enabled: boolean) => {
+  if (enabled && !allBinsActive) {
+    setActiveBins(Object.fromEntries(BIN_DEFS.map((b) => [b.key, true])));
+  }
+  setBrushEnabled(enabled);
+};
+
+// options 中根据 allBinsActive 条件设置 highlightLayer
+const options = useMemo((): WaferMapOptions => ({
+  // ...其他配置
+  highlightLayer: allBinsActive
+    ? undefined  // 全选时关闭高亮层，框选可自由使用
+    : {
+        show: true,
+        maskBgColor: 'rgba(255,255,255,0.725)',
+        isHighlight: ({ shape }) =>
+          activeBins[shape.data.k]
+            ? { die: { bgColor: colorMap[shape.data.k] } }
+            : undefined,
+      },
+}), [activeBins, allBinsActive, /* ...其他依赖 */]);
+```
+
+### Vue3 实现
+
+```vue
+<script setup lang="ts">
+const brushEnabled = ref(false);
+const activeBins = ref<Record<string, boolean>>(
+  Object.fromEntries(BIN_DEFS.map((b) => [b.key, true])),
+);
+const allBinsActive = computed(
+  () => Object.values(activeBins.value).every(Boolean),
+);
+
+// Legend 切换：激活 Legend 高亮时 → 禁用框选并清除
+function toggleBin(key: string) {
+  if (brushEnabled.value) {
+    brushEnabled.value = false;
+    instance?.changeBrushEnabled(false);
+    instance?.clearBrushedShapes();
+  }
+  activeBins.value = { ...activeBins.value, [key]: !activeBins.value[key] };
+}
+
+// 框选切换：启用框选时 → 重置 Legend 为全选
+function handleBrushToggle(enabled: boolean) {
+  if (enabled && !allBinsActive.value) {
+    activeBins.value = Object.fromEntries(BIN_DEFS.map((b) => [b.key, true]));
+  }
+  brushEnabled.value = enabled;
+}
+
+// options 中根据 allBinsActive 条件设置 highlightLayer
+const options = computed((): WaferMapOptions => ({
+  // ...其他配置
+  highlightLayer: allBinsActive.value
+    ? undefined
+    : {
+        show: true,
+        maskBgColor: 'rgba(255,255,255,0.725)',
+        isHighlight: ({ shape }) =>
+          activeBins.value[shape.data.k]
+            ? { die: { bgColor: colorMap[shape.data.k] } }
+            : undefined,
+      },
+}));
+</script>
+```
+
+### 检查清单
+
+在编写涉及 WaferMap 高亮的代码时，确认以下事项：
+
+- [ ] Legend 切换处理函数中：是否在变更 `activeBins` 前检查并禁用框选？
+- [ ] 框选启用处理函数中：是否在启用框选前检查并重置 Legend 为全选？
+- [ ] `highlightLayer` 配置：当 `allBinsActive` 时是否设为 `undefined`（而非 `{ show: false }`）？
+- [ ] 禁用框选时：是否同时调用了 `changeBrushEnabled(false)` 和 `clearBrushedShapes()`？
 
 ---
 

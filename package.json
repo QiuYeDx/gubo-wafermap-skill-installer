@@ -1,6 +1,6 @@
 {
   "name": "gubo-wafermap-skill-installer",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "@guwave/wafermap-v2 晶圆图 AI Skill 一键安装器",
   "type": "module",
   "bin": {

@@ -22,6 +22,7 @@ description: >-
 | [reference.md](reference.md) | 完整 TypeScript 类型定义、构造函数、实例方法签名、导出清单 |
 | [recipes.md](recipes.md) | 实用代码模式：数据生成、自定义 Tooltip、Legend 高亮、框选管理、React/Vue3 生产级模板 |
 | [features.md](features.md) | 已支持特性矩阵、配置组合与功能交互说明 |
+| [react-demo.tsx](react-example/react-demo.tsx) | **完整 React 示例**：含数据生成、BinMap 着色、Tooltip 自定义、Legend 高亮、框选、Reticle、高亮互斥逻辑，可作为集成参考 |
 
 ## 前提条件：.npmrc 配置
 
@@ -81,6 +82,51 @@ import { getColorByPFBinNum, makeColorBlockColors, BinPFTypeEnum } from '@guwave
 
 - **`type: 'dashboard'`**（默认）— 数据驱动：提供 `data` 数组，每个 die 的坐标和属性由数据决定
 - **`type: 'waferMap-config'`** — 配置驱动：仅提供晶圆参数和可选 `siteData`，组件自动生成圆内 die 数据
+
+## ⛔ 关键规则：圈选高亮与 Legend 高亮互斥
+
+> **此规则为强制约束，编写任何使用 WaferMap 高亮功能的代码时必须遵守。**
+
+WaferMap 有两种高亮机制，**它们互斥，不能同时存在**：
+
+| 高亮类型 | 触发方式 | 配置 |
+| --- | --- | --- |
+| **圈选高亮**（Brush Highlight） | 用户框选 die 后，选中的 die 高亮 | `brush.needBrushHighlight: true` + `changeBrushEnabled(true)` |
+| **Legend 高亮**（Color By Highlight） | 用户在 Legend 中取消勾选某些类别，剩余类别高亮 | `highlightLayer.isHighlight` 返回样式或 `undefined` |
+
+### 互斥规则
+
+1. **当 Legend 高亮激活时**（用户取消勾选某些 Bin）→ **必须**禁用框选并清除框选状态
+2. **当圈选高亮激活时**（用户启用框选 / 产生框选结果）→ **必须**重置 Legend 为全选（关闭 Legend 高亮层）
+
+### 实现要求
+
+```typescript
+// 当 Legend 状态变更（不再全选）→ 清除框选
+function onLegendChange(newActiveBins: Record<string, boolean>) {
+  const allActive = Object.values(newActiveBins).every(Boolean);
+  if (!allActive && brushEnabled) {
+    waferMap.changeBrushEnabled(false);
+    waferMap.clearBrushedShapes();
+    brushEnabled = false;
+  }
+  // 更新 highlightLayer ...
+}
+
+// 当启用框选 → 重置 Legend 为全选
+function onBrushEnable() {
+  activeBins = allBinsActiveState; // 重置为全选
+  waferMap.changeBrushEnabled(true);
+  // highlightLayer 设为 undefined（全选时无高亮层）
+}
+```
+
+> 完整实现参见 [react-demo.tsx](react-example/react-demo.tsx) 中的 `toggleBin` 和 `handleBrushToggle` 函数。
+> React/Vue3 实现模式详见 [recipes.md](recipes.md#高亮互斥实现模式)。
+
+**违反此规则会导致两种高亮状态同时作用于 highlightLayer，产生视觉冲突和状态不一致。**
+
+---
 
 ### 已支持特性速查
 
@@ -485,7 +531,10 @@ waferMap.setOptions({
 
 ### 4. 高亮与框选
 
+> ⛔ **圈选高亮与 Legend 高亮互斥**，详见 [关键规则](#⛔-关键规则圈选高亮与-legend-高亮互斥)。
 > 完整的框选生命周期管理和 Legend 高亮模式详见 [recipes.md](recipes.md)
+
+**圈选高亮示例**（启用框选时，Legend 应为全选状态，highlightLayer 为 undefined）：
 
 ```typescript
 waferMap.setOptions({
@@ -500,33 +549,35 @@ waferMap.setOptions({
       },
     },
   },
-  highlightLayer: {
-    show: true,
-    maskBgColor: 'rgba(255,255,255,0.725)',
-    isHighlight: ({ shape }) => {
-      if (shape.data.binType === 'FAIL') {
-        return { die: { bgColor: 'red' } };
-      }
-      return undefined; // 不高亮 → 被遮罩
-    },
-  },
+  // ⛔ 框选模式下不要同时配置 highlightLayer，两者互斥
   data: dieData,
 });
 
-// 框选需要额外调用 changeBrushEnabled 来启用
 waferMap.changeBrushEnabled(true);
 
 const unsubBrush = waferMap.onBrushChange((shapes) => {
   console.log('选中的 die:', shapes);
 });
-const unsubClick = waferMap.onClickDie((item) => {
-  console.log('点击:', item);
-  return true; // 返回 true 阻止默认行为
-});
+```
 
-// 清理
-unsubBrush();
-unsubClick();
+**Legend 高亮示例**（Legend 过滤时，框选应已禁用并清除）：
+
+```typescript
+waferMap.setOptions({
+  // ...基础 wafer/die/center 配置
+  // ⛔ Legend 高亮模式下不要同时启用框选，两者互斥
+  highlightLayer: {
+    show: true,
+    maskBgColor: 'rgba(255,255,255,0.725)',
+    isHighlight: ({ shape }) => {
+      if (activeBins[shape.data.k]) {
+        return { die: { bgColor: colorMap[shape.data.k] } };
+      }
+      return undefined;
+    },
+  },
+  data: dieData,
+});
 ```
 
 **框选配置 vs 启用/禁用**：
@@ -615,12 +666,21 @@ const { colorGroupArrayHex } = makeColorBlockColors(10, 'red_green');
 - 使用 `as const` 定义 Bin 颜色等常量数组时，循环赋值需显式标注联合类型：`let bin: (typeof BIN_DEFS)[number] = BIN_DEFS[0]`
 - `die.bgColor` 函数中的 `item` 是 `WaferMapDataItem` 类型，业务字段通过 `item.xxx` 动态访问（`[key: string]: any`）
 
+### ⛔ 高亮互斥（强制规则）
+
+- **圈选高亮与 Legend 高亮不能同时存在**
+- 当 Legend 高亮激活（部分 Bin 取消勾选）时 → 必须禁用框选 + 清除框选状态
+- 当框选启用/产生选中结果时 → 必须重置 Legend 为全选（关闭 highlightLayer）
+- 两种高亮同时存在会导致 highlightLayer 状态冲突和视觉错乱
+- 详见 [关键规则](#⛔-关键规则圈选高亮与-legend-高亮互斥) 和 [recipes.md](recipes.md#高亮互斥实现模式)
+
 ### 框选相关
 
 - `setOptions({ brush })` 仅定义框选的**配置和样式**，不会自动启用框选
 - 需要额外调用 `changeBrushEnabled(true)` 来**启用**框选功能
 - 禁用框选时建议同时调用 `clearBrushedShapes()` 清除已选状态
 - `supportAltSelected: true` 允许用户按住 Alt 键进行增选/减选
+- ⛔ 启用框选前必须确认 Legend 处于全选状态（无 Legend 高亮）
 
 ### Reticle 相关
 

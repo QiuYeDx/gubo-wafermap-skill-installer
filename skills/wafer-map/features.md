@@ -203,7 +203,9 @@ const unsub = waferMap.onBrushChange((shapes) => { ... });
 waferMap.clearBrushedShapes();
 ```
 
-**重要**：`setOptions({ brush })` 仅定义配置，需额外调用 `changeBrushEnabled(true)` 才能启用框选。
+**重要**：
+- `setOptions({ brush })` 仅定义配置，需额外调用 `changeBrushEnabled(true)` 才能启用框选。
+- ⛔ 启用框选前必须确保 Legend 处于全选状态（无 Legend 高亮），两者互斥。见 [高亮互斥规则](#高亮互斥规则强制)。
 
 ### 10. Alt 增减选
 
@@ -238,6 +240,8 @@ highlightLayer: {
 ```
 
 > 详细 Legend 交互模式见 [recipes.md](recipes.md#color-by--legend-高亮)
+
+⛔ **Legend 高亮与圈选高亮互斥**：激活 Legend 高亮时必须禁用框选并清除框选状态。见 [高亮互斥规则](#高亮互斥规则强制)。
 
 ### 12. 坐标轴
 
@@ -369,7 +373,7 @@ waferMap.setOptions({
 | --- | --- |
 | BinMap + Legend 高亮 | `die.bgColor` 函数着色 + `highlightLayer.isHighlight` 按 Bin 类型过滤 |
 | Reticle + Site 标签 | `reticle.show: true` + `reticle.label.show: true` + 数据含 `reticleLabel` 字段 |
-| 框选 + 高亮 | `brush.needBrushHighlight: true` + `highlightLayer`（两者可同时使用） |
+| ⛔ 框选高亮 + Legend 高亮 | **互斥！不能同时使用。** 启用框选时 Legend 必须全选；Legend 过滤时框选必须禁用。见 [高亮互斥规则](#高亮互斥规则强制) |
 | 裁剪 + Reticle | `clip: false` 可查看完整 Reticle 布局，`clip: true` 仅显示圆内部分 |
 | 自定义 Tooltip + 框选 | 两者独立，框选不影响 Tooltip 显示 |
 | Die 描边 auto + 大数据 | `die.line.show: 'auto'` 在缩放较小时自动隐藏描边提升性能 |
@@ -378,7 +382,28 @@ waferMap.setOptions({
 
 | 情况 | 说明 |
 | --- | --- |
+| ⛔ **圈选高亮与 Legend 高亮互斥** | **两者不能同时存在。** 圈选高亮（Brush + `needBrushHighlight`）和 Legend 高亮（`highlightLayer.isHighlight`）都作用于高亮层，同时存在会导致视觉冲突。激活一种高亮时必须重置另一种。详见下方 [高亮互斥规则](#高亮互斥规则强制) |
 | `reticle.label` 需要 `reticle.show: true` | label 依赖 reticle 渲染层，reticle 关闭时 label 不显示 |
 | `tooltip: false` 禁用所有 tooltip | 即使配置了 `render`，`tooltip: false` 也会全部禁用 |
 | `type: 'waferMap-config'` 不使用 `data` | 该模式自动生成数据，传入 `data` 会被忽略 |
 | `setOptions` 与 `highlight` | 先 `setOptions` 再 `highlight`，反过来 highlight 可能被覆盖 |
+
+### 高亮互斥规则（强制）
+
+> ⛔ **此规则为强制约束，所有使用 WaferMap 高亮功能的代码必须遵守。**
+
+圈选高亮（Brush Highlight）和 Legend 高亮（Color By Highlight）**互斥**，不能同时激活：
+
+| 场景 | 正确做法 | 错误做法 |
+| --- | --- | --- |
+| 用户取消勾选某些 Legend 项 | 禁用框选 + 清除框选状态，然后配置 `highlightLayer` | 同时保留框选和 Legend 高亮 |
+| 用户启用框选 / 框选产生结果 | 重置 Legend 为全选（`highlightLayer: undefined`） | 同时保留 Legend 过滤和框选高亮 |
+| 所有 Legend 项均为选中状态 | `highlightLayer: undefined`，此时可自由启用框选 | — |
+
+**为什么互斥**：两种高亮机制都通过 `highlightLayer` 控制 die 的可见/高亮状态。同时存在时，框选高亮和 Legend 过滤高亮会争抢对 `highlightLayer` 的控制权，导致：
+- 视觉不一致（选中的 die 被 Legend 遮罩，或 Legend 过滤被框选覆盖）
+- 状态不可预测（用户难以理解当前的高亮来源）
+
+**实现参考**：
+- 完整代码见 [react-demo.tsx](react-example/react-demo.tsx) 中的 `toggleBin` 和 `handleBrushToggle`
+- React/Vue3 模式见 [recipes.md](../recipes.md#高亮互斥实现模式)
