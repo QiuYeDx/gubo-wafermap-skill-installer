@@ -149,24 +149,71 @@ interface WaferMapTooltipObjOptions {
 }
 
 interface WaferMapTooltipRenderParams {
-  data: WaferMapDataItem;
-  reticleData: WaferMapDataItem;
+  data: WaferMapDataItem;       // 当前 hover 的 die 数据
+  reticleData: WaferMapDataItem; // 该 die 所属 reticle 的数据
   event: MouseEvent;
 }
 ```
+
+**使用说明**：
+- `tooltip: true` — 使用默认 tooltip，自动显示 die 的所有数据字段
+- `tooltip: false` — 禁用 tooltip
+- `tooltip: { render }` — 自定义 tooltip 内容
+- `render` 函数返回 **HTML 字符串** 或 **HTMLElement**，用于自定义 tooltip 中显示的内容和样式
+- `data` 包含 die 数据项的所有字段（包括通过 `[key: string]: any` 携带的业务字段）
+
+## 实例方法签名
+
+```typescript
+// 渲染与配置
+setOptions(options: WaferMapOptions): void
+resize(options?: WaferMapOptions): void
+resetZoom(): void
+enableZoom(enabled: boolean): void
+setRotate(degree: number): void
+getData(isCurrent?: boolean): DrawOption
+
+// 高亮与框选
+highlight(params: {
+  highlightLayer?: HighlightLayerOptions & { maskBgColor?: string };
+  brush?: WaferMapBrushOptions;
+}): void
+changeBrushEnabled(enabled?: boolean): void
+clearBrushedShapes(): void
+
+// 事件监听 —— 都返回 unsubscribe 函数
+onBrushChange(fn: (shapes?: any[] | null) => void): () => void
+onClickDie(fn: (item: any) => boolean | void, options?: { native?: boolean }): () => void
+
+// 导出
+toDataURL(options?: { type?: string; quality?: number }): string
+toBlob(options?: { type?: string; quality?: number }): Promise<Blob | null>
+getFinalCanvas(): HTMLCanvasElement
+
+// 插件
+use(plugin: Plugin, ...options: any[]): WaferMap   // 链式调用
+destroy(): void
+```
+
+**方法行为说明**：
+- `setOptions()` — 全量更新配置并重绘整个画布，适用于配置变更或数据变更
+- `highlight()` — 仅更新高亮层，**不重绘底图**，适用于 Legend 切换等高频操作
+- `changeBrushEnabled()` — 仅切换框选功能的启用/禁用，不触发重绘
+- `resize()` — 读取容器最新尺寸并重新适配画布，通常配合 `ResizeObserver` 使用
+- `onBrushChange` 的 `shapes` 参数可能为 `undefined`、`null` 或 `any[]`，注意防空
 
 ## Brush 框选类型
 
 ```typescript
 interface WaferMapBrushOptions {
   alwaysSupportHighlight?: boolean;
-  needBrushHighlight?: boolean;
-  supportAltSelected?: boolean;
-  multiBrush?: boolean;
+  needBrushHighlight?: boolean;      // 框选后是否高亮选中的 die
+  supportAltSelected?: boolean;      // 是否支持 Alt 键增减选
+  multiBrush?: boolean;              // 是否支持多次框选
   styleOptions?: {
-    mark?: Partial<IStyle>;
-    mask?: Partial<IStyle>;
-    area?: Partial<IStyle>;
+    mark?: Partial<IStyle>;          // 框选标记样式
+    mask?: Partial<IStyle>;          // 非选中区域遮罩样式
+    area?: Partial<IStyle>;          // 框选区域样式
   };
 }
 
@@ -178,12 +225,18 @@ interface IStyle {
 }
 ```
 
+**框选工作流**：
+1. 在 `setOptions` 中配置 `brush` 选项（定义样式和行为）
+2. 调用 `changeBrushEnabled(true)` 启用框选
+3. 通过 `onBrushChange(fn)` 监听选中变化
+4. 禁用时调用 `changeBrushEnabled(false)` + `clearBrushedShapes()`
+
 ## HighlightLayer 类型
 
 ```typescript
 interface HighlightLayerOptions {
   show?: boolean;
-  maskBgColor?: string;
+  maskBgColor?: string;     // 未高亮部分的遮罩颜色，如 'rgba(255,255,255,0.725)'
   isHighlight?: (params: {
     shape: { data: WaferMapDataItem; type: 'die' | 'reticle' };
   }) => IsHighLightRes | undefined;
@@ -194,6 +247,13 @@ interface IsHighLightRes {
   reticle?: Partial<IStyle>;
 }
 ```
+
+**高亮层工作原理**：
+- 当 `highlightLayer.show: true` 时，所有 die 先被 `maskBgColor` 遮罩覆盖
+- `isHighlight` 函数对每个 die/reticle 调用：
+  - 返回 `{ die: { bgColor: '...' } }` → 该 die 高亮显示（遮罩被移除，按指定颜色显示）
+  - 返回 `undefined` → 该 die 保持被遮罩状态（变暗/变淡）
+- 当全部 die 都需要高亮时（如 Legend 全选），建议设置 `highlightLayer: undefined` 或 `show: false` 以跳过遮罩计算
 
 ## Plugin 插件接口
 

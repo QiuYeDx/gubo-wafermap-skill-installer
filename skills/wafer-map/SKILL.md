@@ -1,11 +1,19 @@
 ---
 name: wafer-map
-description: Guide for using @guwave/wafermap-v2 to render semiconductor wafer maps with Canvas. Use when creating, configuring, or integrating wafer map visualizations (die map, bin map, reticle map, site map) in React or Vue3 projects. **Crucial: Verify .npmrc configuration for @guwave scope before installation.** Triggers on: "wafer map", "晶圆图", "die map", "bin map", "WaferMap", "@guwave/wafermap", "wafermap", ".npmrc config for wafermap".
+description: Guide for using @guwave/wafermap-v2 to render semiconductor wafer maps with Canvas. Use when creating, configuring, or integrating wafer map visualizations (die map, bin map, reticle map, site map) in React, Vue3, or vanilla JS projects. **Crucial: Verify .npmrc configuration for @guwave scope before installation.** Triggers on: "wafer map", "晶圆图", "die map", "bin map", "WaferMap", "@guwave/wafermap", "wafermap", ".npmrc config for wafermap", "reticle", "notch", "highlight", "brush", "圈选", "高亮", "框选", "辅助线", "subline".
 ---
 
 # @guwave/wafermap-v2 使用指南
 
 基于 Canvas 的高性能半导体晶圆图渲染组件，**框架无关**（React / Vue3 / 原生 JS 均可）。
+
+## 补充参考文档索引
+
+| 文件 | 内容 |
+| --- | --- |
+| [reference.md](reference.md) | 完整 TypeScript 类型定义、构造函数、实例方法签名、导出清单 |
+| [recipes.md](recipes.md) | 实用代码模式：数据生成、自定义 Tooltip、Legend 高亮、框选管理、React/Vue3 生产级模板 |
+| [features.md](features.md) | 已支持特性矩阵、配置组合与功能交互说明 |
 
 ## 前提条件：.npmrc 配置
 
@@ -37,7 +45,7 @@ rm -rf node_modules
 pnpm install
 ```
 
-(如果项目中有 `package-lock.json`, 即用的是 npm, 则把 pnpm 命令换为 npm)
+（如果项目中有 `package-lock.json`, 即用的是 npm, 则把 pnpm 命令换为 npm）
 
 ## 导入
 
@@ -55,7 +63,7 @@ import { getColorByPFBinNum, makeColorBlockColors, BinPFTypeEnum } from '@guwave
 ## 核心概念
 
 | 概念 | 说明 |
-| ------ | ------ |
+| --- | --- |
 | **Wafer** | 圆形晶圆，`wafer.diameter` 设置直径（mm），`wafer.notch` 设置缺口方向 |
 | **Die** | 晶圆上最小芯片单元，`die.width/height` 设置物理尺寸（mm） |
 | **Reticle** | 光罩区域，包含多个 Die，由 `center.dieCountInReticle` 控制 |
@@ -65,6 +73,27 @@ import { getColorByPFBinNum, makeColorBlockColors, BinPFTypeEnum } from '@guwave
 
 - **`type: 'dashboard'`**（默认）— 数据驱动：提供 `data` 数组，每个 die 的坐标和属性由数据决定
 - **`type: 'waferMap-config'`** — 配置驱动：仅提供晶圆参数和可选 `siteData`，组件自动生成圆内 die 数据
+
+### 已支持特性速查
+
+> 详见 [features.md](features.md) 中的完整特性矩阵。
+
+| 特性 | 关键配置 | 说明 |
+| --- | --- | --- |
+| Notch 方向 | `wafer.notch.direction` | `'up'` / `'down'` / `'left'` / `'right'` |
+| Die 描边 | `die.line.{ show, width, color }` | `show` 支持 `boolean` 或 `'auto'`（按缩放比例自动显隐） |
+| Die 着色 | `die.bgColor` | 字符串或 `(item) => string` 函数 |
+| Die 标签 | `die.label.{ show, fontSize, color }` | 在 die 上显示文字 |
+| Reticle 显示 | `reticle.show` | 需同时配置 `center.dieCountInReticle` |
+| Reticle 标签 | `reticle.label.{ show, fontSize }` | 需在数据中提供 `reticleLabel` 字段 |
+| 裁剪/完整显示 | `clip` | `true` 裁剪圆外 die，`false` 完整显示 |
+| 自定义 Tooltip | `tooltip.render` | 返回 HTML 字符串或 HTMLElement |
+| 框选（Brush） | `brush` + `changeBrushEnabled()` | 矩形框选 die，支持 Alt 增减选 |
+| 高亮层 | `highlightLayer.isHighlight` | 按条件高亮 die，未高亮部分显示遮罩 |
+| 缩放/平移 | `Config.zoomEnabled` | 构造函数参数，支持滚轮缩放和拖拽平移 |
+| 旋转 | `rotate` / `setRotate()` | 旋转晶圆图 |
+| 辅助线 | `SublinePlugin` | 行列线、同心圆、扇形分区 |
+| 导出图片 | `toDataURL()` / `toBlob()` | 导出为 PNG/JPEG |
 
 ## 快速开始
 
@@ -93,7 +122,7 @@ waferMap.setOptions({
 ## WaferMapOptions 配置速查
 
 | 属性 | 类型 | 默认值 | 说明 |
-| ------ | ------ | -------- | ------ |
+| --- | --- | --- | --- |
 | `type` | `'dashboard' \| 'waferMap-config'` | `'dashboard'` | 渲染模式 |
 | `padding` | `number` | `10` | 画布内边距（px） |
 | `clip` | `boolean` | `true` | 是否裁剪圆外 die |
@@ -150,6 +179,12 @@ center: {
 }
 ```
 
+**Reticle 坐标计算规则**：当 `dieCountInReticle: { x: 3, y: 3 }` 时：
+- Die (0,0) ~ (2,2) → Reticle (0,0)
+- Die (3,0) ~ (5,2) → Reticle (1,0)
+- Die (-3,-3) ~ (-1,-1) → Reticle (-1,-1)
+- 公式：`reticleX = Math.floor(dieX / dieCountInReticle.x)`（对负数同样适用）
+
 ### die 芯片配置
 
 ```typescript
@@ -180,6 +215,8 @@ reticle: {
   centerReticleLine: { show: false, width: 1, color: '#aaa' },
 }
 ```
+
+**注意**：`reticle.label` 仅在 `reticle.show: true` 时有效。数据中需要提供 `reticleLabel` 字段（或通过 `dataMap.reticleLabel` 映射）。
 
 ### dataMap 字段映射
 
@@ -212,18 +249,39 @@ interface WaferMapDataItem {
 
 ## 实例方法
 
+### 渲染与配置
+
 ```typescript
-waferMap.setOptions(options: WaferMapOptions)       // 设置配置并渲染
+waferMap.setOptions(options: WaferMapOptions)       // 设置配置并渲染（全量更新）
 waferMap.resize(options?: WaferMapOptions)           // 响应容器尺寸变化
 waferMap.resetZoom()                                 // 重置缩放到初始状态
 waferMap.enableZoom(enabled: boolean)                // 启用/禁用滚轮缩放
 waferMap.setRotate(degree: number)                   // 设置旋转角度
 waferMap.getData(isCurrent?: boolean)                // 获取 die/reticle shape 数据
-waferMap.highlight({ highlightLayer, brush })        // 更新高亮配置
+```
+
+### 高亮与框选
+
+```typescript
+// 仅更新高亮/框选配置（比 setOptions 更轻量，不重绘底图）
+waferMap.highlight({ highlightLayer?, brush? })
+
+// 框选控制
 waferMap.changeBrushEnabled(enabled?: boolean)       // 启用/禁用框选
 waferMap.clearBrushedShapes()                        // 清除框选
-waferMap.onBrushChange(fn: (shapes?) => void)        // 监听框选，返回 unsubscribe
-waferMap.onClickDie(fn, { native?: boolean })        // 监听 die 点击，返回 unsubscribe
+```
+
+### 事件监听
+
+```typescript
+// 返回 unsubscribe 函数，务必在组件卸载时调用
+const unsubBrush = waferMap.onBrushChange(fn: (shapes?) => void)
+const unsubClick = waferMap.onClickDie(fn, { native?: boolean })
+```
+
+### 导出与插件
+
+```typescript
 waferMap.toDataURL({ type?, quality? })              // 导出 DataURL
 waferMap.toBlob({ type?, quality? })                 // 导出 Blob（Promise）
 waferMap.getFinalCanvas()                            // 获取合成 Canvas 元素
@@ -231,12 +289,23 @@ waferMap.use(plugin: Plugin, options?)               // 注册插件（链式调
 waferMap.destroy()                                   // 销毁实例，释放资源
 ```
 
+### setOptions vs highlight — 何时用哪个
+
+| 场景 | 推荐方法 | 原因 |
+| --- | --- | --- |
+| 修改 wafer/die/reticle/tooltip 等基础配置 | `setOptions()` | 需要完整重绘 |
+| 仅更新 Legend 高亮 / 框选样式 | `highlight()` | 仅更新高亮层，不重绘底图，性能更好 |
+| 首次渲染或数据变更 | `setOptions()` | 全量配置 |
+| 动态切换框选启用/禁用 | `changeBrushEnabled()` | 独立控制，不触发重绘 |
+
 ## 框架集成
 
-### React
+### React — 生产级模板
+
+> 完整的带 Legend/Brush/Tooltip 综合模板见 [recipes.md](recipes.md#react-生产级组件模板)
 
 ```tsx
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useMemo } from 'react';
 import WaferMap from '@guwave/wafermap-v2';
 import '@guwave/wafermap-v2/style.css';
 import type { WaferMapOptions } from '@guwave/wafermap-v2';
@@ -247,19 +316,41 @@ function WaferMapView({ options }: { options: WaferMapOptions }) {
 
   useEffect(() => {
     if (!containerRef.current) return;
-    instanceRef.current = new WaferMap(containerRef.current, { zoomEnabled: true });
-    return () => { instanceRef.current?.destroy(); instanceRef.current = null; };
+    const wm = new WaferMap(containerRef.current, { zoomEnabled: true });
+    instanceRef.current = wm;
+
+    const ro = new ResizeObserver(() => wm.resize());
+    ro.observe(containerRef.current);
+
+    const unsubBrush = wm.onBrushChange((shapes?: any[] | null) => {
+      console.log('brushed:', shapes?.length ?? 0);
+    });
+
+    return () => {
+      unsubBrush();
+      ro.disconnect();
+      wm.destroy();
+      instanceRef.current = null;
+    };
   }, []);
 
   useEffect(() => {
-    if (options) instanceRef.current?.setOptions(options);
+    instanceRef.current?.setOptions(options);
   }, [options]);
 
   return <div ref={containerRef} style={{ width: '100%', height: 600 }} />;
 }
 ```
 
-### Vue 3
+**关键注意点**：
+- 使用 `ResizeObserver` 监听容器尺寸变化并调用 `resize()`，比 `window.addEventListener('resize')` 更准确
+- 事件订阅（`onBrushChange` / `onClickDie`）放在创建实例的 effect 中，**一次订阅即可**
+- 所有 `onXxx` 返回的 unsubscribe 函数必须在 cleanup 中调用
+- `options` 对象用 `useMemo` 构建以避免不必要的重渲染
+
+### Vue 3 — 生产级模板
+
+> 完整的带 Legend/Brush/Tooltip 综合模板见 [recipes.md](recipes.md#vue3-生产级组件模板)
 
 ```vue
 <template>
@@ -272,18 +363,45 @@ import '@guwave/wafermap-v2/style.css';
 import type { WaferMapOptions } from '@guwave/wafermap-v2';
 
 const props = defineProps<{ options: WaferMapOptions }>();
+const emit = defineEmits<{ brushChange: [count: number] }>();
+
 const containerRef = ref<HTMLElement>();
 let instance: WaferMap | null = null;
+let unsubBrush: (() => void) | null = null;
+let ro: ResizeObserver | null = null;
 
 onMounted(() => {
-  instance = new WaferMap(containerRef.value!, { zoomEnabled: true });
+  if (!containerRef.value) return;
+  instance = new WaferMap(containerRef.value, { zoomEnabled: true });
+
+  ro = new ResizeObserver(() => instance?.resize());
+  ro.observe(containerRef.value);
+
+  unsubBrush = instance.onBrushChange((shapes?: any[] | null) => {
+    emit('brushChange', shapes?.length ?? 0);
+  });
+
   instance.setOptions(props.options);
 });
 
-watch(() => props.options, (opts) => { if (opts) instance?.setOptions(opts); }, { deep: true });
-onUnmounted(() => { instance?.destroy(); instance = null; });
+watch(() => props.options, (opts) => {
+  if (opts) instance?.setOptions(opts);
+}, { deep: true });
+
+onUnmounted(() => {
+  unsubBrush?.();
+  ro?.disconnect();
+  instance?.destroy();
+  instance = null;
+});
 </script>
 ```
+
+**关键注意点**：
+- 使用 `ResizeObserver` 替代 `window.addEventListener('resize')`
+- 事件订阅在 `onMounted` 中一次完成，取消订阅在 `onUnmounted` 中调用
+- 使用 `watch` + `deep: true` 监听 `options` 变化，触发 `setOptions` 重绘
+- 建议用 `computed` 构建 `options` 对象，确保引用稳定（减少不必要的 `setOptions` 调用）
 
 ## 场景示例
 
@@ -311,7 +429,7 @@ waferMap.setOptions({
   grid: { show: true },
   dataMap: { dieX: 'dieX', dieY: 'dieY', reticleX: 'rx', reticleY: 'ry' },
   tooltip: true,
-  data: binData, // [{ dieX, dieY, rx, ry, k: 'P-HBIN1-HBin1', ... }, ...]
+  data: binData,
 });
 ```
 
@@ -359,6 +477,8 @@ waferMap.setOptions({
 
 ### 4. 高亮与框选
 
+> 完整的框选生命周期管理和 Legend 高亮模式详见 [recipes.md](recipes.md)
+
 ```typescript
 waferMap.setOptions({
   // ...基础 wafer/die/center 配置
@@ -379,11 +499,14 @@ waferMap.setOptions({
       if (shape.data.binType === 'FAIL') {
         return { die: { bgColor: 'red' } };
       }
-      return undefined; // 不高亮
+      return undefined; // 不高亮 → 被遮罩
     },
   },
   data: dieData,
 });
+
+// 框选需要额外调用 changeBrushEnabled 来启用
+waferMap.changeBrushEnabled(true);
 
 const unsubBrush = waferMap.onBrushChange((shapes) => {
   console.log('选中的 die:', shapes);
@@ -397,6 +520,11 @@ const unsubClick = waferMap.onClickDie((item) => {
 unsubBrush();
 unsubClick();
 ```
+
+**框选配置 vs 启用/禁用**：
+- `setOptions({ brush: { ... } })` — 配置框选行为和样式
+- `changeBrushEnabled(true/false)` — 运行时启用/禁用框选（不触发重绘）
+- `clearBrushedShapes()` — 清除当前选中状态
 
 ### 5. 导出图片
 
@@ -457,13 +585,40 @@ const { colorGroupArrayHex } = makeColorBlockColors(10, 'red_green');
 //   'red_green_blue' | 'blue_green_yellow'
 ```
 
-## 注意事项
+## 常见陷阱与注意事项
+
+### 必须遵守
 
 - 容器元素**必须有明确的 CSS 宽高**，WaferMap 自动适配容器大小
-- `data` 数组量大时不要频繁深拷贝，组件已优化大数据处理
-- `die.line.show: 'auto'` 在缩放较小时自动隐藏边框线以提升性能
 - 销毁前调用 `onClickDie`/`onBrushChange` 返回的取消函数移除监听
 - 调用 `destroy()` 释放 Canvas 和事件资源
+
+### 性能优化
+
+- `data` 数组量大时不要频繁深拷贝，组件已优化大数据处理
+- `die.line.show: 'auto'` 在缩放较小时自动隐藏边框线以提升性能
+- 仅更新高亮时使用 `highlight()` 而非 `setOptions()`，避免不必要的底图重绘
+- 使用 `ResizeObserver` 替代 `window.addEventListener('resize')`
+- React 中用 `useMemo` 构建 `options`，Vue3 中用 `computed` 构建 `options`，避免不必要的 `setOptions` 调用
+
+### TypeScript 类型注意
+
+- `onBrushChange` 回调签名为 `(shapes?: any[] | null) => void`，参数可能为 `null`，需用 `shapes?.length ?? 0` 安全访问
+- 使用 `as const` 定义 Bin 颜色等常量数组时，循环赋值需显式标注联合类型：`let bin: (typeof BIN_DEFS)[number] = BIN_DEFS[0]`
+- `die.bgColor` 函数中的 `item` 是 `WaferMapDataItem` 类型，业务字段通过 `item.xxx` 动态访问（`[key: string]: any`）
+
+### 框选相关
+
+- `setOptions({ brush })` 仅定义框选的**配置和样式**，不会自动启用框选
+- 需要额外调用 `changeBrushEnabled(true)` 来**启用**框选功能
+- 禁用框选时建议同时调用 `clearBrushedShapes()` 清除已选状态
+- `supportAltSelected: true` 允许用户按住 Alt 键进行增选/减选
+
+### Reticle 相关
+
+- `reticle.label` 仅在 `reticle.show: true` 时可见
+- 数据中需要提供 `reticleLabel` 字段（或通过 `dataMap.reticleLabel` 映射到实际字段名）
+- `clip: false` 时边缘 reticle 会完整显示（超出晶圆圆边界的部分也会渲染）
 
 ## 详细类型参考
 
