@@ -1,6 +1,14 @@
 ---
 name: wafer-map
-description: Guide for using @guwave/wafermap-v2 to render semiconductor wafer maps with Canvas. Use when creating, configuring, or integrating wafer map visualizations (die map, bin map, reticle map, site map) in React, Vue3, or vanilla JS projects. **Crucial: Verify .npmrc configuration for @guwave scope before installation.** Triggers on: "wafer map", "晶圆图", "die map", "bin map", "WaferMap", "@guwave/wafermap", "wafermap", ".npmrc config for wafermap", "reticle", "notch", "highlight", "brush", "圈选", "高亮", "框选", "辅助线", "subline".
+description: >-
+  Guide for using @guwave/wafermap-v2 to render semiconductor wafer maps with
+  Canvas. Use when creating, configuring, or integrating wafer map
+  visualizations (die map, bin map, reticle map, site map) in React, Vue3, or
+  vanilla JS projects. Crucial: verify .npmrc configuration for @guwave scope
+  before installation. Triggers on: "wafer map", "晶圆图", "die map", "bin map",
+  "WaferMap", "@guwave/wafermap", "wafermap", ".npmrc config for wafermap",
+  "reticle", "notch", "highlight", "brush", "圈选", "高亮", "框选", "辅助线",
+  "subline".
 ---
 
 # @guwave/wafermap-v2 使用指南
